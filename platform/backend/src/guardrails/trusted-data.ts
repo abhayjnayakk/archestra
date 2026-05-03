@@ -64,24 +64,20 @@ export async function evaluateIfContextIsTrusted(
   let unsafeContextBoundary: UnsafeContextBoundary | undefined;
 
   // If agent configured to consider context untrusted from the beginning,
-  // mark context as untrusted immediately and skip evaluation
+  // mark the unsafe context boundary but still evaluate Tool Result Policies.
+  // Previously this returned early, skipping policy evaluation entirely (issue #4225).
   if (considerContextUntrusted) {
     logger.debug(
       { agentId },
-      "[trustedData] evaluateIfContextIsTrusted: context marked untrusted by agent config",
+      "[trustedData] evaluateIfContextIsTrusted: context marked untrusted by agent config, still evaluating tool result policies",
     );
-    return {
-      toolResultUpdates: {},
-      contextIsTrusted: false,
-      usedDualLlm: false,
-      dualLlmAnalyses: [],
-      unsafeContextBoundary: {
-        kind: "preexisting_untrusted",
-        reason:
-          initialUntrustedReason ??
-          UNSAFE_CONTEXT_BOUNDARY_REASON.agentConfiguredUntrusted,
-      },
+    unsafeContextBoundary = {
+      kind: "preexisting_untrusted",
+      reason:
+        initialUntrustedReason ??
+        UNSAFE_CONTEXT_BOUNDARY_REASON.agentConfiguredUntrusted,
     };
+    // Fall through to tool result policy evaluation below
   }
 
   // First, collect all tool calls from all messages

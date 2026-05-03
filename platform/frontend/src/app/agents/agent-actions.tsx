@@ -2,6 +2,7 @@ import { E2eTestId } from "@shared";
 import {
   Clock,
   Copy,
+  Download,
   Eye,
   MessageSquare,
   Pencil,
@@ -13,6 +14,7 @@ import {
   TableRowActions,
 } from "@/components/table-row-actions";
 import type { useProfilesPaginated } from "@/lib/agent.query";
+import { toast } from "sonner";
 
 type Agent = NonNullable<
   ReturnType<typeof useProfilesPaginated>["data"]
@@ -26,6 +28,7 @@ type AgentActionsProps = {
   onView: (agent: Agent) => void;
   onDelete: (agentId: string) => void;
   onClone: (agentId: string) => void;
+  onExport: (agent: Agent) => void;
 };
 
 export function AgentActions({
@@ -36,6 +39,7 @@ export function AgentActions({
   onView,
   onDelete,
   onClone,
+  onExport,
 }: AgentActionsProps) {
   const isBuiltIn = Boolean(agent.builtIn);
 
@@ -90,6 +94,13 @@ export function AgentActions({
       permissions: { agent: ["create"] },
       onClick: () => onClone(agent.id),
       testId: `${E2eTestId.CloneAgentButton}-${agent.name}`,
+    },
+    {
+      icon: <Download className="h-4 w-4" />,
+      label: "Export",
+      permissions: { agent: ["read"] },
+      onClick: () => onExport(agent),
+      testId: `${E2eTestId.ExportAgentButton}-${agent.name}`,
     },
     editOrViewAction,
     {

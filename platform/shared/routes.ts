@@ -11,6 +11,8 @@ export const RouteId = {
   DeleteAgent: "deleteAgent",
   GetLabelKeys: "getLabelKeys",
   GetLabelValues: "getLabelValues",
+  ExportAgent: "exportAgent",
+  ImportAgent: "importAgent",
 
   // Schedule Trigger Routes
   GetScheduleTriggers: "getScheduleTriggers",

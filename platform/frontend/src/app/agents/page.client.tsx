@@ -8,7 +8,7 @@ import {
 } from "@shared";
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef, SortingState } from "@tanstack/react-table";
-import { ChevronDown, ChevronUp, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, Download, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import { A2AConnectionInstructions } from "@/components/a2a-connection-instructi
 import { AgentDialog } from "@/components/agent-dialog";
 import { AgentIcon } from "@/components/agent-icon";
 import { AgentNameCell } from "@/components/agent-name-cell";
+import { ImportAgentDialog } from "@/components/import-agent-dialog";
 import {
   ActiveFilterBadges,
   AgentScopeFilter,
@@ -197,6 +198,7 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
   const [editingAgent, setEditingAgent] = useState<AgentData | null>(null);
   const [viewingAgent, setViewingAgent] = useState<AgentData | null>(null);
   const [deletingAgentId, setDeletingAgentId] = useState<string | null>(null);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   const cloneAgent = useCloneAgent();
 
@@ -215,6 +217,38 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
       }
     },
     [cloneAgent],
+  );
+
+  const handleExport = useCallback(
+    async (agent: AgentData) => {
+      const toastId = toast.loading("Exporting agent...");
+      try {
+        const response = await fetch(`/api/agents/${agent.id}/export`);
+        if (!response.ok) {
+          throw new Error("Failed to export agent");
+        }
+
+        const exportedAgent = await response.json();
+
+        // Create a blob and download it
+        const blob = new Blob([JSON.stringify(exportedAgent, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${agent.name.replace(/[^a-z0-9]/gi, "_")}_export.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        toast.success("Agent exported successfully", { id: toastId });
+      } catch (_error) {
+        toast.error("Failed to export agent", { id: toastId });
+      }
+    },
+    [],
   );
 
   // Handle 'create' URL parameter to open the Create Agent dialog
@@ -464,6 +498,7 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
             }}
             onDelete={setDeletingAgentId}
             onClone={handleClone}
+            onExport={handleExport}
           />
         );
       },
@@ -484,14 +519,24 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
           </p>
         }
         actionButton={
-          <PermissionButton
-            permissions={{ agent: ["create"] }}
-            onClick={() => setIsCreateDialogOpen(true)}
-            data-testid={E2eTestId.CreateAgentButton}
-          >
-            <Plus className="h-4 w-4" />
-            Create Agent
-          </PermissionButton>
+          <div className="flex gap-2">
+            <PermissionButton
+              permissions={{ agent: ["create"] }}
+              onClick={() => setIsImportDialogOpen(true)}
+              variant="outline"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Import Agent
+            </PermissionButton>
+            <PermissionButton
+              permissions={{ agent: ["create"] }}
+              onClick={() => setIsCreateDialogOpen(true)}
+              data-testid={E2eTestId.CreateAgentButton}
+            >
+              <Plus className="h-4 w-4" />
+              Create Agent
+            </PermissionButton>
+          </div>
         }
       >
         <div>
@@ -574,6 +619,11 @@ function Agents({ initialData }: { initialData?: AgentsInitialData }) {
                 onOpenChange={(open) => !open && setDeletingAgentId(null)}
               />
             )}
+
+            <ImportAgentDialog
+              open={isImportDialogOpen}
+              onOpenChange={setIsImportDialogOpen}
+            />
           </div>
         </div>
       </PageLayout>

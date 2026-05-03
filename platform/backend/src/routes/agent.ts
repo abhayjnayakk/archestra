@@ -21,6 +21,7 @@ import {
   MemberModel,
   TeamModel,
 } from "@/models";
+import { exportAgent, importAgent } from "@/models/agent-export";
 import { initializeObservabilityMetrics } from "@/observability";
 import {
   type AgentScope,
@@ -30,6 +31,8 @@ import {
   constructResponseSchema,
   createSortingQuerySchema,
   DeleteObjectResponseSchema,
+  ExportedAgentSchema,
+  ImportAgentResponseSchema,
   InsertAgentSchema,
   SelectAgentSchema,
   UpdateAgentSchemaBase,
@@ -945,6 +948,91 @@ const agentRoutes: FastifyPluginAsyncZod = async (fastify) => {
         organizationId,
       );
       return reply.send({ defaultAgentId });
+    },
+  );
+
+  fastify.get(
+    "/api/agents/:id/export",
+    {
+      schema: {
+        operationId: RouteId.ExportAgent,
+        description: "Export an agent to a portable JSON format",
+        tags: ["Agents"],
+        params: z.object({
+          id: UuidIdSchema,
+        }),
+        response: {
+          200: ExportedAgentSchema,
+          404: z.object({ error: z.string() }),
+        },
+      },
+    },
+    async ({ params: { id }, user, organizationId }, reply) => {
+      // Fetch agent to determine its type for permission check
+      const agent = await AgentModel.findById(id, user.id, true);
+      if (!agent) {
+        throw new ApiError(404, "Agent not found");
+      }
+
+      // Check read permission
+      const checker = await getAgentTypePermissionChecker({
+        userId: user.id,
+        organizationId,
+      });
+      try {
+        checker.require(agent.agentType, "read");
+      } catch {
+        throw new ApiError(404, "Agent not found");
+      }
+
+      const exportedAgent = await exportAgent(id);
+      return reply.send(exportedAgent);
+    },
+  );
+
+  fastify.post(
+    "/api/agents/import",
+    {
+      schema: {
+        operationId: RouteId.ImportAgent,
+        description: "Import an agent from a portable JSON format",
+        tags: ["Agents"],
+        body: ExportedAgentSchema,
+        response: {
+          200: ImportAgentResponseSchema,
+          400: z.object({ error: z.string() }),
+          403: z.object({ error: z.string() }),
+        },
+      },
+    },
+    async ({ body, user, organizationId }, reply) => {
+      // Check create permission for the agent type
+      const agentType = body.agentType ?? "agent";
+
+      const checker = await getAgentTypePermissionChecker({
+        userId: user.id,
+        organizationId,
+      });
+      checker.require(agentType, "create");
+
+      // Validate scope-based permissions for agent creation
+      if (!checker.isAdmin(agentType)) {
+        const scope = body.scope ?? "personal";
+        if (scope === "org") {
+          throw new ApiError(403, "Only admins can create org-scoped agents");
+        }
+        if (scope === "team" || (body.teams && body.teams.length > 0)) {
+          if (!checker.isTeamAdmin(agentType)) {
+            throw new ApiError(
+              403,
+              "You need team-admin permission to create team-scoped agents",
+            );
+          }
+        }
+      }
+
+      const { agent, warnings } = await importAgent(body, organizationId, user.id);
+      return reply.send({ agent, warnings });
     },
   );
 };

@@ -3,6 +3,7 @@ import { DualLlmSubagent } from "@/agents/subagents/dual-llm";
 import { AgentToolModel, ToolModel, TrustedDataPolicyModel } from "@/models";
 import { beforeEach, describe, expect, test } from "@/test";
 import type { CommonMessage, Tool } from "@/types";
+import { UNSAFE_CONTEXT_BOUNDARY_REASON } from "@/types";
 import { evaluateIfContextIsTrusted } from "./trusted-data";
 
 describe("trusted-data evaluation (provider-agnostic)", () => {
@@ -407,6 +408,66 @@ describe("trusted-data evaluation (provider-agnostic)", () => {
       expect(result.unsafeContextBoundary).toEqual({
         kind: "preexisting_untrusted",
         reason: "inherited_from_parent",
+      });
+    });
+
+    test("evaluates tool result policies even when context starts untrusted", async () => {
+      // Create a block policy
+      await TrustedDataPolicyModel.create({
+        toolId,
+        conditions: [
+          { key: "emails[*].from", operator: "contains", value: "hacker" },
+        ],
+        action: "block_always",
+        description: "Block hacker emails",
+      });
+
+      const commonMessages: CommonMessage[] = [
+        { role: "user" },
+        { role: "assistant" },
+        {
+          role: "tool",
+          toolCalls: [
+            {
+              id: "call_456",
+              name: "get_emails",
+              content: {
+                emails: [
+                  { from: "hacker@company.com", subject: "Suspicious" },
+                  { from: "hacker@evil.com", subject: "Malicious" },
+                ],
+              },
+              isError: false,
+            },
+          ],
+        },
+        { role: "assistant" },
+      ];
+
+      // Even when considerContextUntrusted is true, tool result policies should be evaluated
+      const result = await evaluateIfContextIsTrusted(
+        commonMessages,
+        agentId,
+        organizationId,
+        undefined,
+        true, // Context is untrusted from the start
+        "restrictive",
+        { teamIds: [] },
+      );
+
+      // Context should be untrusted
+      expect(result.contextIsTrusted).toBe(false);
+
+      // Tool result should be blocked by policy (this is the fix - previously would be empty)
+      expect(result.toolResultUpdates).toEqual({
+        call_456:
+          "[Content blocked by policy: Data blocked by policy: Block hacker emails]",
+      });
+
+      // Should record the preexisting unsafe boundary
+      expect(result.unsafeContextBoundary).toEqual({
+        kind: "preexisting_untrusted",
+        reason: UNSAFE_CONTEXT_BOUNDARY_REASON.agentConfiguredUntrusted,
       });
     });
 
